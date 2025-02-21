@@ -280,7 +280,7 @@ if __name__ == "__main__":
                                        arrowstyle='->', connectionstyle='arc3,rad=0.1')
         nx.draw_networkx_labels(G, pos=positions)
         patches = [mpatches.Patch(color=color, label=strand) for strand, color in strand_colors.items()]
-        plt.legend(handles=patches, loc='upper right')
+        #plt.legend(handles=patches, loc='upper right')
         plt.title("Parallel Partitioning of the Grid into Squiggly Strands")
         plt.axis("off")
         plt.show()

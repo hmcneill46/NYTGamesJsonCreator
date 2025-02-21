@@ -69,6 +69,7 @@ class StrandsPuzzle:
         if self.strandsSolution is None:
             self.strandsSolution = self.solve_for_strands()
         print(self.strandsSolution)
+        return(self.strandsSolution)
 
     def calculate_starting_board(self):
         startingBoardGrid = [[None for _ in range(6)] for _ in range(8)]
@@ -162,7 +163,7 @@ def preview_puzzle_solution(puzzle: StrandsPuzzle):
             v = path[i + 1]
             G.add_edge(u, v, strand=strand)
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(6, 10))  # Increase figure size to provide more space
     nx.draw_networkx_nodes(G, pos=positions, node_size=500, node_color='lightgray')
     nx.draw_networkx_edges(G, pos=positions, edge_color='lightgray', alpha=0.3, arrows=True)
     for strand, color in strand_colors.items():
@@ -179,9 +180,9 @@ def preview_puzzle_solution(puzzle: StrandsPuzzle):
             node_labels[node] = gridLabels[i][j]
 
     nx.draw_networkx_labels(G, pos=positions, labels=node_labels)
-    patches = [mpatches.Patch(color=color, label=strand) for strand, color in strand_colors.items()]
-    plt.legend(handles=patches, loc='upper right')
-    plt.title("Parallel Partitioning of the Grid into Squiggly Strands")
+    #patches = [mpatches.Patch(color=color, label=strand) for strand, color in strand_colors.items()]
+    #plt.legend(handles=patches, loc='lower right', bbox_to_anchor=(1, -0.18))  # Moves the legend outside the plot
+    plt.title("Strands Puzzle Solution")
     plt.axis("off")
     plt.show()
 
