@@ -26,6 +26,7 @@ class StrandsPuzzle:
         self.spangramCoords = []
         self.strandsSolution = None
         self.board = [[None for _ in range(6)] for _ in range(8)]
+        self.wordLenMax = 19
 
     def add_theme_words(self, themeWords: list):
         self.themeWords = themeWords
@@ -123,6 +124,11 @@ def preview_puzzle_solution(puzzle: StrandsPuzzle):
         [37, 38, 39, 40, 41, 42],
         [43, 44, 45, 46, 47, 48]
     ]
+
+    gridLabels = []
+    for row in puzzle.startingBoard:
+        gridLabels.append([cell if cell is not None else '' for cell in row])
+
     for strand, path in solution.items():
         print(f"Strand {strand}: {path}")
 
@@ -134,8 +140,7 @@ def preview_puzzle_solution(puzzle: StrandsPuzzle):
     G = nx.DiGraph()
     G.add_nodes_from(positions.keys())
 
-    # Define colors for each strand.#
-    
+    # Define colors for each strand.
     TABLEAU_COLORS = [
         'blue',
         'orange',
@@ -166,7 +171,14 @@ def preview_puzzle_solution(puzzle: StrandsPuzzle):
             nx.draw_networkx_edges(G, pos=positions, edgelist=strand_edges,
                                     edge_color=color, width=2, arrows=True,
                                     arrowstyle='->', connectionstyle='arc3,rad=0.1')
-    nx.draw_networkx_labels(G, pos=positions)
+    
+    # Create a dictionary for node labels using gridLabels
+    node_labels = {}
+    for i, row in enumerate(grid):
+        for j, node in enumerate(row):
+            node_labels[node] = gridLabels[i][j]
+
+    nx.draw_networkx_labels(G, pos=positions, labels=node_labels)
     patches = [mpatches.Patch(color=color, label=strand) for strand, color in strand_colors.items()]
     plt.legend(handles=patches, loc='upper right')
     plt.title("Parallel Partitioning of the Grid into Squiggly Strands")
