@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import matplotlib.patches as mpatches
 import StrandsSolver
+import StrandsWordFinder
+from WordTrie import WordTrie
 
 class StrandsPuzzle:
     def __init__(self, print_date, editor):
@@ -68,6 +70,12 @@ class StrandsPuzzle:
         self.strandsSolution = StrandsSolver.solve_partition_parallel(strands, grid)
         if self.strandsSolution is None:
             self.strandsSolution = self.solve_for_strands()
+        self.calculate_theme_coords()
+        self.calculate_spangram_coords()
+        self.calculate_starting_board()
+        
+        if not self.validate_found_solution():
+            self.strandsSolution = self.solve_for_strands()
         print(self.strandsSolution)
         return(self.strandsSolution)
 
@@ -111,6 +119,20 @@ class StrandsPuzzle:
 
     def get_loaded_solution(self):
         return self.strandsSolution
+
+    def validate_found_solution(self):
+        board_2d_list = [list(row) for row in self.startingBoard]
+        importantWords = self.themeWords + [self.spangram]
+        wordTrie = WordTrie()
+        with open("english_words.txt", "r") as file:
+            for line in file:
+                word = line.strip()
+                if word:  # Skip empty lines.
+                    wordTrie.insert(word)
+        for n in importantWords:
+            wordTrie.insert(n)
+
+        return StrandsWordFinder.validatePuzzle(board_2d_list, wordTrie, importantWords)
 
 
 def preview_puzzle_solution(puzzle: StrandsPuzzle):
@@ -267,9 +289,6 @@ def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_en
 
     try:
         puzzle.solve_for_strands()
-        puzzle.calculate_theme_coords()
-        puzzle.calculate_spangram_coords()
-        puzzle.calculate_starting_board()
     except Exception as e:
         messagebox.showerror("Error", f"Error solving puzzle: {e}")
         return
