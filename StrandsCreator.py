@@ -134,16 +134,22 @@ def preview_puzzle_solution(puzzle: StrandsPuzzle):
     G = nx.DiGraph()
     G.add_nodes_from(positions.keys())
 
-    # Define colors for each strand.
-    strand_colors = {
-        'CARROTS': 'red',
-        'CELERY': 'blue',
-        'NOODLES': 'green',
-        'ONIONS': 'orange',
-        'PEPPER': 'purple',
-        'STOCK': 'brown',
-        'SPANGRAM': 'cyan'
-    }
+    # Define colors for each strand.#
+    
+    TABLEAU_COLORS = [
+        'blue',
+        'orange',
+        'green',
+        'red',
+        'purple',
+        'brown',
+        'pink',
+        'gray',
+        'olive',
+        'cyan'
+    ]
+
+    strand_colors = {strand: TABLEAU_COLORS[i] for i, (strand, _) in enumerate(solution.items())}
 
     for strand, path in solution.items():
         for i in range(len(path) - 1):
