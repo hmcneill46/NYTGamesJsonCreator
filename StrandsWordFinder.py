@@ -66,6 +66,15 @@ def validatePuzzle(board: list, wordTrie, importantWords: list):
             print(word)
             valid = False
     return valid
+def calculateSetOfWords(board: list, wordTrie):
+    allWords = []
+    for row in range(len(board)):
+        for col in range(len(board[0])):
+            allWords.append(findWords(board, wordTrie, (row, col)))
+    allWordsJoined = []
+    for sublist in allWords:
+        allWordsJoined += sublist
+    return set([word[0] for word in allWordsJoined])
 
 
 if __name__ == "__main__":

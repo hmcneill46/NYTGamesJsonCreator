@@ -1,17 +1,17 @@
 import random
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import deque
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-# ---------------------
-# DFS/backtracking functions (module level for multiprocessing)
-# ---------------------
-
-# Global counter for monitoring progress (each process has its own)
+# Global counter for monitoring progress.
 global_iterations = 0
 start_time = time.time()
+
+# ---------------------
+# DFS/backtracking functions
+# ---------------------
 
 def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, prefer_turn, diagonals_used):
     """
@@ -19,7 +19,7 @@ def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, p
     - used: set of nodes already used.
     - prev_direction: the (dr, dc) of the last move (or None at start).
     - prefer_turn: if True, favor moves that change direction.
-    - diagonals_used: dictionary mapping a square’s top-left coordinate to which diagonal type (1 or 2) is used.
+    - diagonals_used: mapping of a square’s top-left coordinate to the diagonal type (1 or 2) used.
     """
     global global_iterations, start_time
     global_iterations += 1
@@ -35,7 +35,7 @@ def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, p
     grid_cols = len(grid[0])
     r, c = node_to_coord[current]
     
-    # All 8 possible moves (N, NE, E, SE, S, SW, W, NW).
+    # All 8 possible moves.
     directions = [(-1, 0), (-1, 1), (0, 1), (1, 1),
                   (1, 0), (1, -1), (0, -1), (-1, -1)]
     neighbors = []
@@ -46,7 +46,7 @@ def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, p
             if neighbor not in used:
                 neighbors.append((neighbor, (dr, dc)))
     
-    # Optionally prefer moves that change direction (to get a "squiggly" look)
+    # Optionally favor moves that change direction.
     if prev_direction is not None and prefer_turn:
         turning = []
         straight = []
@@ -67,14 +67,12 @@ def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, p
         square_key = None
         diag_type = None
         if is_diagonal:
-            # Identify the 2x2 square (if one exists) where this diagonal move lies.
+            # Identify the 2x2 square (if it exists) where this diagonal move lies.
             r_min = min(r, node_to_coord[neighbor][0])
             c_min = min(c, node_to_coord[neighbor][1])
             if r_min <= grid_rows - 2 and c_min <= grid_cols - 2:
                 square_key = (r_min, c_min)
                 # Determine diagonal type:
-                # Type 1: from top-left to bottom-right.
-                # Type 2: from top-right to bottom-left.
                 if (r, c) == (r_min, c_min) or node_to_coord[neighbor] == (r_min, c_min):
                     diag_type = 1
                 elif (r, c) == (r_min, c_min+1) or node_to_coord[neighbor] == (r_min, c_min+1):
@@ -84,20 +82,20 @@ def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, p
                         diag_type = 1
                     elif (r, c) == (r_min+1, c_min) or node_to_coord[neighbor] == (r_min+1, c_min):
                         diag_type = 2
-                # Enforce the constraint: if a square already has a diagonal, it must match.
+                # Enforce diagonal constraint.
                 if square_key in diagonals_used and diagonals_used[square_key] != diag_type:
                     continue
                 if square_key not in diagonals_used:
                     diagonals_used[square_key] = diag_type
                     diag_set_here = True
 
-        # Extend the path
+        # Extend the path.
         path.append(neighbor)
         used.add(neighbor)
         result = dfs_extend(path, used, target_length, node_to_coord, grid, direction, prefer_turn, diagonals_used)
         if result is not None:
             return result
-        # Backtrack
+        # Backtrack.
         path.pop()
         used.remove(neighbor)
         if diag_set_here:
@@ -115,96 +113,162 @@ def dfs_for_strand(strand_name, strand_length, start_node, used, node_to_coord, 
         used.remove(start_node)
     return result
 
-def check_spangram_constraint(path, grid):
+def check_spangram_constraint(path, grid, spangram_direction):
     """
-    For the "SPANGRAM" strand, require that the path touches either
-    both the top and bottom or both the left and right boundaries.
+    Enforce SPANGRAM constraint based on the specified direction.
+    - If spangram_direction == "left-right", path must touch both left and right edges.
+    - If spangram_direction == "top-bottom", path must touch both top and bottom edges.
     """
     top_nodes = set(grid[0])
     bottom_nodes = set(grid[-1])
     left_nodes = set(row[0] for row in grid)
     right_nodes = set(row[-1] for row in grid)
     path_set = set(path)
-    return (path_set & top_nodes and path_set & bottom_nodes) or (path_set & left_nodes and path_set & right_nodes)
 
-def backtrack_solve(sorted_strands, index, used, diagonals_used, solution, node_to_coord, grid, all_nodes):
+    if spangram_direction == "left-right":
+        return path_set & left_nodes and path_set & right_nodes
+    elif spangram_direction == "top-bottom":
+        return path_set & top_nodes and path_set & bottom_nodes
+    else:
+        raise ValueError("Invalid spangram_direction. Use 'left-right' or 'top-bottom'.")
+
+
+# ---------------------
+# Connectivity and feasibility checks
+# ---------------------
+
+def get_free_components(used, grid, node_to_coord):
     """
-    Recursive backtracking to assign paths for strands starting at sorted_strands[index].
+    Given the set of used nodes, compute the sizes of all connected components
+    in the free (unused) part of the grid. We use 8-direction connectivity.
     """
+    all_nodes = set(node for row in grid for node in row)
+    free_nodes = all_nodes - used
+    components = []
+    visited = set()
+    directions = [(-1, 0), (-1, 1), (0, 1), (1, 1),
+                  (1, 0), (1, -1), (0, -1), (-1, -1)]
+    for node in free_nodes:
+        if node in visited:
+            continue
+        comp_size = 0
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur in visited:
+                continue
+            visited.add(cur)
+            comp_size += 1
+            r, c = node_to_coord[cur]
+            for dr, dc in directions:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < len(grid) and 0 <= nc < len(grid[0]):
+                    neighbor = grid[nr][nc]
+                    if neighbor in free_nodes and neighbor not in visited:
+                        stack.append(neighbor)
+        components.append(comp_size)
+    return components
+
+def can_partition_components(component_sizes, strands):
+    """
+    Given the list of free component sizes and the list of remaining strand lengths,
+    check whether it is possible to partition the strands so that for each free component,
+    some subset of strands adds up exactly to its size.
+    (This is a necessary condition for a solution.)
+    """
+    if not component_sizes:
+        return len(strands) == 0
+    # Sort components descending for a bit of efficiency.
+    component_sizes = sorted(component_sizes, reverse=True)
+    target = component_sizes[0]
+    
+    # Generate all subsets of the remaining strands that sum exactly to the target.
+    subsets = []
+    def find_subsets(i, current, current_sum):
+        if current_sum == target:
+            subsets.append(current[:])
+            return
+        if i >= len(strands) or current_sum > target:
+            return
+        # Choose strands[i]
+        current.append(i)
+        find_subsets(i+1, current, current_sum + strands[i])
+        current.pop()
+        # Skip strands[i]
+        find_subsets(i+1, current, current_sum)
+    find_subsets(0, [], 0)
+    if not subsets:
+        return False
+    # Try each subset assignment.
+    for subset in subsets:
+        remaining = [strands[i] for i in range(len(strands)) if i not in subset]
+        if can_partition_components(component_sizes[1:], remaining):
+            return True
+    return False
+
+# ---------------------
+# Backtracking with connectivity pruning (single-threaded)
+# ---------------------
+
+def backtrack_solve(sorted_strands, index, used, diagonals_used, solution, node_to_coord, grid, all_nodes, spangram_direction):
     if index == len(sorted_strands):
         return True
+
+    # --- Connectivity lookahead ---
+    # Determine which free regions remain and whether they can (in principle) house
+    # the unplaced strands.
+    remaining_strands_lengths = [length for (_, length) in sorted_strands[index:]]
+    free_components = get_free_components(used, grid, node_to_coord)
+    if free_components and min(free_components) < min(remaining_strands_lengths):
+        return False
+    if not can_partition_components(free_components, remaining_strands_lengths):
+        return False
+
     name, length = sorted_strands[index]
-    remaining = list(all_nodes - used)
-    random.shuffle(remaining)
-    for start in remaining:
+    remaining_candidates = list(all_nodes - used)
+    random.shuffle(remaining_candidates)
+    for start in remaining_candidates:
         path = dfs_for_strand(name, length, start, used, node_to_coord, grid, prefer_turn=True, diagonals_used=diagonals_used)
         if path is not None:
-            if name.upper() == "SPANGRAM" and not check_spangram_constraint(path, grid):
+            # For the SPANGRAM strand, enforce the extra wall constraint.
+            if name.upper() == "SPANGRAM" and not check_spangram_constraint(path, grid, spangram_direction):
                 for node in path:
                     used.remove(node)
                 continue
             solution[name] = path
-            if backtrack_solve(sorted_strands, index + 1, used, diagonals_used, solution, node_to_coord, grid, all_nodes):
+            if backtrack_solve(sorted_strands, index + 1, used, diagonals_used, solution, node_to_coord, grid, all_nodes, spangram_direction):
                 return True
+            # Backtrack.
             for node in path:
                 used.remove(node)
             solution.pop(name, None)
     return False
 
-def search_from_first_start(first_start, sorted_strands, all_nodes, node_to_coord, grid):
+def solve_partition(strands, grid, spangram_direction):
     """
-    This function fixes the starting node for the first (longest) strand
-    and then runs backtracking for the remaining strands.
-    Returns a solution dictionary if found; otherwise None.
-    """
-    used = set()
-    diagonals_used = {}
-    solution = {}
-    name, length = sorted_strands[0]
-    path = dfs_for_strand(name, length, first_start, used, node_to_coord, grid, prefer_turn=True, diagonals_used=diagonals_used)
-    if path is None:
-        return None
-    if name.upper() == "SPANGRAM" and not check_spangram_constraint(path, grid):
-        for node in path:
-            used.remove(node)
-        return None
-    solution[name] = path
-    if backtrack_solve(sorted_strands, 1, used, diagonals_used, solution, node_to_coord, grid, all_nodes):
-        return solution
-    else:
-        return None
-
-def solve_partition_parallel(strands, grid):
-    """
-    Partition the grid into disjoint paths for each strand.
-    This version parallelizes the search over candidate starting nodes for the first strand.
-    Returns a dictionary mapping strand names to paths, or None if no solution is found.
+    Partition the grid into disjoint paths for each strand using a single-threaded backtracking
+    approach with connectivity (feasibility) pruning. Returns a dictionary mapping strand names
+    to paths if a solution is found, or None otherwise.
     """
     node_to_coord = {}
     for i, row in enumerate(grid):
         for j, node in enumerate(row):
             node_to_coord[node] = (i, j)
-    all_nodes = set(node_to_coord.keys())
-    # Sort strands by descending length (longer, more-constrained strands first)
+    all_nodes = set(node for row in grid for node in row)
+    # Sort strands by descending length (the longer, more-constrained strands first).
     sorted_strands = sorted(strands, key=lambda x: x[1], reverse=True)
-    candidates = list(all_nodes)
-    random.shuffle(candidates)
-    with ProcessPoolExecutor() as executor:
-        futures = []
-        for cand in candidates:
-            futures.append(executor.submit(search_from_first_start, cand, sorted_strands, all_nodes, node_to_coord, grid))
-        for future in as_completed(futures):
-            result = future.result()
-            if result is not None:
-                # Found a solution; cancel remaining tasks.
-                for f in futures:
-                    f.cancel()
-                return result
-    return None
+    used = set()
+    diagonals_used = {}
+    solution = {}
+    if backtrack_solve(sorted_strands, 0, used, diagonals_used, solution, node_to_coord, grid, all_nodes, spangram_direction):
+        return solution
+    else:
+        return None
 
 # ---------------------
 # Main block: example data, solving, and visualization
 # ---------------------
+
 if __name__ == "__main__":
     # Define grid (8 rows x 6 columns)
     grid = [
@@ -217,7 +281,7 @@ if __name__ == "__main__":
         [37, 38, 39, 40, 41, 42],
         [43, 44, 45, 46, 47, 48]
     ]
-
+    
     # Define words and a spangram so that total letters equal 48.
     words = [
         "CARROTS",
@@ -232,22 +296,22 @@ if __name__ == "__main__":
     # Build strands list as [name, length]
     strands = [[word, len(word)] for word in words]
     strands.append(["SPANGRAM", len(spangram)])
-
-    print("Starting parallel search...")
-    solution = solve_partition_parallel(strands, grid)
+    
+    print("Starting improved search with connectivity pruning...")
+    solution = solve_partition(strands, grid, spangram_direction="top-bottom")
     if solution is None:
         print("No solution found.")
     else:
         for strand, path in solution.items():
             print(f"Strand {strand}: {path}")
-
+        
         # ---------------------
         # Visualization using networkx
         # ---------------------
         positions = {}
         for i, row in enumerate(grid):
             for j, node in enumerate(row):
-                positions[node] = (j, -i)  # so row 0 is at the top
+                positions[node] = (j, -i)  # so that row 0 is at the top
 
         G = nx.DiGraph()
         G.add_nodes_from(positions.keys())
@@ -280,7 +344,6 @@ if __name__ == "__main__":
                                        arrowstyle='->', connectionstyle='arc3,rad=0.1')
         nx.draw_networkx_labels(G, pos=positions)
         patches = [mpatches.Patch(color=color, label=strand) for strand, color in strand_colors.items()]
-        #plt.legend(handles=patches, loc='upper right')
-        plt.title("Parallel Partitioning of the Grid into Squiggly Strands")
+        plt.title("Improved Grid Partitioning with Connectivity Pruning")
         plt.axis("off")
         plt.show()

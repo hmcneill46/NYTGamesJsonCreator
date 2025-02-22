@@ -29,14 +29,31 @@ class StrandsPuzzle:
         self.strandsSolution = None
         self.board = [[None for _ in range(6)] for _ in range(8)]
         self.wordLenMax = 19
+        self.wordLenMin = 4
+        self.board_2d_list = []
+
+        self.wordTrie = WordTrie()
+        self.reducedWordTrie = WordTrie()
+        with open("english_words.txt", "r") as file:
+            for line in file:
+                word = line.strip()
+                if not word:  # Skip empty lines.
+                    continue
+                if len(word) > self.wordLenMax:
+                    continue
+                if len(word) < self.wordLenMin:
+                    continue
+                self.wordTrie.insert(word)
 
     def add_theme_words(self, themeWords: list):
         self.themeWords = themeWords
         for themeWord in themeWords:
+            self.reducedWordTrie.insert(themeWord)
             self.themeCoords[themeWord] = [[None, None] for _ in range(len(themeWord))]
 
     def add_spangram(self, spangram):
         self.spangram = spangram
+        self.reducedWordTrie.insert(spangram)
         self.spangramCoords = [[None, None] for _ in range(len(spangram))]
 
     def add_clue(self, clue):
@@ -52,7 +69,7 @@ class StrandsPuzzle:
                 return self.strandsSolution
         return None
 
-    def solve_for_strands(self):
+    def solve_for_strands(self, spangram_direction):
         grid = [
             [1, 2, 3, 4, 5, 6],
             [7, 8, 9, 10, 11, 12],
@@ -67,15 +84,13 @@ class StrandsPuzzle:
         strands.append(["SPANGRAM", len(self.spangram)])
         print(strands)
         print(f"{sum([strand[1] for strand in strands])} letters in total")
-        self.strandsSolution = StrandsSolver.solve_partition_parallel(strands, grid)
-        if self.strandsSolution is None:
-            self.strandsSolution = self.solve_for_strands()
-        self.calculate_theme_coords()
-        self.calculate_spangram_coords()
-        self.calculate_starting_board()
-        
-        if not self.validate_found_solution():
-            self.strandsSolution = self.solve_for_strands()
+        while self.validate_found_solution() == False:
+            self.strandsSolution = None
+            while self.strandsSolution == None:
+                self.strandsSolution = StrandsSolver.solve_partition(strands, grid, spangram_direction)
+            self.calculate_theme_coords()
+            self.calculate_spangram_coords()
+            self.calculate_starting_board()
         print(self.strandsSolution)
         return(self.strandsSolution)
 
@@ -87,6 +102,7 @@ class StrandsPuzzle:
         for coord_index, coord in enumerate(self.spangramCoords):
             startingBoardGrid[coord[0]][coord[1]] = self.spangram[coord_index]
         self.startingBoard = ["".join(row) for row in startingBoardGrid]
+        self.board_2d_list = [list(row) for row in self.startingBoard]
 
     def calculate_theme_coords(self):
         for themeWord in self.themeWords:
@@ -121,18 +137,9 @@ class StrandsPuzzle:
         return self.strandsSolution
 
     def validate_found_solution(self):
-        board_2d_list = [list(row) for row in self.startingBoard]
-        importantWords = self.themeWords + [self.spangram]
-        wordTrie = WordTrie()
-        with open("english_words.txt", "r") as file:
-            for line in file:
-                word = line.strip()
-                if word:  # Skip empty lines.
-                    wordTrie.insert(word)
-        for n in importantWords:
-            wordTrie.insert(n)
-
-        return StrandsWordFinder.validatePuzzle(board_2d_list, wordTrie, importantWords)
+        return StrandsWordFinder.validatePuzzle(self.board_2d_list, self.reducedWordTrie, self.themeWords + [self.spangram])
+    def find_all_possible_words(self):
+        self.solutions = sorted(list(StrandsWordFinder.calculateSetOfWords(self.board_2d_list, self.wordTrie)))
 
 
 def preview_puzzle_solution(puzzle: StrandsPuzzle):
@@ -214,7 +221,6 @@ def index_to_coordinates(index, num_columns):
     col = (index - 1) % num_columns
     return (row, col)
 
-
 # Global variable to store the generated puzzle for previewing
 current_puzzle = None
 
@@ -225,11 +231,9 @@ def select_file(root, file_label):
         file_label.config(text=file_path)
         root.selected_file_path = file_path
 
-
-def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_entry, file_label, root):
+def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_entry, direction_var, file_label, root):
     global current_puzzle
 
-    # Retrieve and validate publication date
     date_str = date_entry.entry.get()
     try:
         print_date = datetime.strptime(date_str, '%Y-%m-%d')
@@ -237,13 +241,11 @@ def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_en
         messagebox.showerror("Error", "Selected date is not in the expected format (YYYY-MM-DD).")
         return
 
-    # Retrieve editor name
     editor_name = editor_entry.get()
     if not editor_name:
         messagebox.showerror("Error", "Editor Name is required.")
         return
 
-    # Retrieve theme words (comma-separated)
     theme_words_raw = theme_entry.get()
     if not theme_words_raw:
         messagebox.showerror("Error", "Theme words are required. Please enter a comma-separated list.")
@@ -253,7 +255,6 @@ def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_en
         messagebox.showerror("Error", "Please enter valid theme words.")
         return
 
-    # Retrieve spangram and clue
     spangram = spangram_entry.get().upper()
     if not spangram:
         messagebox.showerror("Error", "Spangram is required.")
@@ -264,17 +265,15 @@ def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_en
         messagebox.showerror("Error", "Clue is required.")
         return
 
-    # Check that the total letters count equals 48
     total_letters = len(spangram) + sum(len(word) for word in theme_words)
     if total_letters != 48:
-        messagebox.showerror("Error", f"Total letters count is {total_letters}, but it must be 48.\n"
-                                      "Please adjust the spangram or theme words accordingly.")
+        messagebox.showerror("Error", f"Total letters count is {total_letters}, but it must be 48.")
         return
     if len(spangram) < 6:
         messagebox.showerror("Error", "Spangram must be at least 6 letters long.")
         return
-    for n in theme_words:
-        if len(n) < 4:
+    for word in theme_words:
+        if len(word) < 4:
             messagebox.showerror("Error", "All theme words must be at least 4 letters long.")
             return
 
@@ -283,14 +282,11 @@ def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_en
         puzzle.add_theme_words(theme_words)
         puzzle.add_spangram(spangram)
         puzzle.add_clue(clue)
+        direction = direction_var.get()
+        puzzle.solve_for_strands(direction)
+        puzzle.find_all_possible_words()
     except Exception as e:
         messagebox.showerror("Error", f"Error creating puzzle instance: {e}")
-        return
-
-    try:
-        puzzle.solve_for_strands()
-    except Exception as e:
-        messagebox.showerror("Error", f"Error solving puzzle: {e}")
         return
 
     file_path = getattr(root, "selected_file_path", None)
@@ -305,7 +301,6 @@ def generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_en
     except Exception as e:
         messagebox.showerror("Error", f"Failed to create JSON file:\n{e}")
 
-
 def preview_puzzle():
     if current_puzzle is None:
         messagebox.showerror("Error", "No puzzle generated yet. Please generate a puzzle first.")
@@ -315,66 +310,55 @@ def preview_puzzle():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to preview puzzle:\n{e}")
 
-
 def run_gui():
-    # Build the GUI using ttkbootstrap
     root = ttk.Window("Strands Puzzle Creator", "flatly")
-    root.geometry("640x480")  # Increase height if needed
+    root.geometry("640x520")
 
-    # Create a canvas and a vertical scrollbar for scrolling support
     canvas = tk.Canvas(root)
     vsb = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
     canvas.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
     canvas.pack(side="left", fill="both", expand=True)
 
-    # Create a frame inside the canvas to hold all the widgets
     scrollable_frame = ttk.Frame(canvas)
     canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 
-    # Update scrollregion whenever the frame size changes
     def on_frame_configure(event):
         canvas.configure(scrollregion=canvas.bbox("all"))
     scrollable_frame.bind("<Configure>", on_frame_configure)
 
-    # Row 0: Editor Name
     ttk.Label(scrollable_frame, text="Editor Name:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
     editor_entry = ttk.Entry(scrollable_frame)
     editor_entry.grid(row=0, column=1, padx=5, pady=5)
 
-    # Row 1: Publish Date
     ttk.Label(scrollable_frame, text="Publish Date:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
     date_entry = DateEntry(scrollable_frame, bootstyle="info", dateformat='%Y-%m-%d')
     date_entry.grid(row=1, column=1, padx=5, pady=5)
 
-    # Row 2: Theme Words (comma-separated)
     ttk.Label(scrollable_frame, text="Theme Words (comma-separated):").grid(row=2, column=0, sticky="e", padx=5, pady=5)
     theme_entry = ttk.Entry(scrollable_frame, width=40)
     theme_entry.grid(row=2, column=1, padx=5, pady=5)
 
-    # Row 3: Spangram
     ttk.Label(scrollable_frame, text="Spangram:").grid(row=3, column=0, sticky="e", padx=5, pady=5)
     spangram_entry = ttk.Entry(scrollable_frame, width=40)
     spangram_entry.grid(row=3, column=1, padx=5, pady=5)
 
-    # Row 4: Clue
     ttk.Label(scrollable_frame, text="Clue:").grid(row=4, column=0, sticky="e", padx=5, pady=5)
     clue_entry = ttk.Entry(scrollable_frame, width=40)
     clue_entry.grid(row=4, column=1, padx=5, pady=5)
 
-    # Row 5: File selection button
-    ttk.Button(scrollable_frame, text="Select File Location",
-               command=lambda: select_file(root, file_label)).grid(row=5, column=0, columnspan=2, padx=5, pady=5)
+    ttk.Label(scrollable_frame, text="Spangram Direction:").grid(row=5, column=0, sticky="e", padx=5, pady=5)
+    direction_var = tk.StringVar(value="left-right")
+    direction_dropdown = ttk.Combobox(scrollable_frame, textvariable=direction_var, values=["left-right", "top-bottom"], state="readonly")
+    direction_dropdown.grid(row=5, column=1, padx=5, pady=5)
+
+    ttk.Button(scrollable_frame, text="Select File Location", command=lambda: select_file(root, file_label)).grid(row=6, column=0, columnspan=2, padx=5, pady=5)
     file_label = ttk.Label(scrollable_frame, text="No file selected", bootstyle="secondary")
-    file_label.grid(row=6, column=0, columnspan=2, padx=5, pady=5)
+    file_label.grid(row=7, column=0, columnspan=2, padx=5, pady=5)
 
-    # Row 7: Generate JSON File button
-    ttk.Button(scrollable_frame, text="Generate JSON File",
-               command=lambda: generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_entry, file_label, root)
-              ).grid(row=7, column=0, columnspan=2, padx=5, pady=10)
+    ttk.Button(scrollable_frame, text="Generate JSON File", command=lambda: generate_json(date_entry, editor_entry, theme_entry, spangram_entry, clue_entry, direction_var, file_label, root)).grid(row=8, column=0, columnspan=2, padx=5, pady=10)
 
-    # Row 8: Preview Puzzle button
-    ttk.Button(scrollable_frame, text="Preview Puzzle", command=preview_puzzle).grid(row=8, column=0, columnspan=2, padx=5, pady=10)
+    ttk.Button(scrollable_frame, text="Preview Puzzle", command=preview_puzzle).grid(row=9, column=0, columnspan=2, padx=5, pady=10)
 
     root.mainloop()
 
