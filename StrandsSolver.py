@@ -14,13 +14,6 @@ start_time = time.time()
 # ---------------------
 
 def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, prefer_turn, diagonals_used):
-    """
-    Recursively extend path to the required target_length.
-    - used: set of nodes already used.
-    - prev_direction: the (dr, dc) of the last move (or None at start).
-    - prefer_turn: if True, favor moves that change direction.
-    - diagonals_used: mapping of a square’s top-left coordinate to the diagonal type (1 or 2) used.
-    """
     global global_iterations, start_time
     global_iterations += 1
     if global_iterations % 1000000 == 0:
@@ -103,9 +96,6 @@ def dfs_extend(path, used, target_length, node_to_coord, grid, prev_direction, p
     return None
 
 def dfs_for_strand(strand_name, strand_length, start_node, used, node_to_coord, grid, prefer_turn, diagonals_used):
-    """
-    Attempt to find a path of exactly strand_length for a given strand starting at start_node.
-    """
     path = [start_node]
     used.add(start_node)
     result = dfs_extend(path, used, strand_length, node_to_coord, grid, None, prefer_turn, diagonals_used)
@@ -115,9 +105,8 @@ def dfs_for_strand(strand_name, strand_length, start_node, used, node_to_coord, 
 
 def check_spangram_constraint(path, grid, spangram_direction):
     """
-    Enforce SPANGRAM constraint based on the specified direction.
-    - If spangram_direction == "left-right", path must touch both left and right edges.
-    - If spangram_direction == "top-bottom", path must touch both top and bottom edges.
+    Existing spangram rule: enforce that the path touches both boundaries
+    (either left/right or top/bottom as specified).
     """
     top_nodes = set(grid[0])
     bottom_nodes = set(grid[-1])
@@ -132,16 +121,57 @@ def check_spangram_constraint(path, grid, spangram_direction):
     else:
         raise ValueError("Invalid spangram_direction. Use 'left-right' or 'top-bottom'.")
 
+# ---------------------
+# New function: additional spangram separation check
+# ---------------------
+def check_spangram_separation_rule(path, grid, node_to_coord, remaining_strands, min_free=10):
+    """
+    After placing the spangram, ensure that removing its nodes splits the grid into exactly two 
+    connected free regions, each with at least min_free nodes, and that the free regions can be 
+    exactly filled by some combination of the remaining strands.
+    """
+    used = set(path)
+    all_nodes = set(node for row in grid for node in row)
+    free_nodes = all_nodes - used
+    free_components = []
+    visited = set()
+    directions = [(-1, 0), (-1, 1), (0, 1), (1, 1),
+                  (1, 0), (1, -1), (0, -1), (-1, -1)]
+    for node in free_nodes:
+        if node in visited:
+            continue
+        comp_size = 0
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur in visited:
+                continue
+            visited.add(cur)
+            comp_size += 1
+            r, c = node_to_coord[cur]
+            for dr, dc in directions:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < len(grid) and 0 <= nc < len(grid[0]):
+                    neighbor = grid[nr][nc]
+                    if neighbor in free_nodes and neighbor not in visited:
+                        stack.append(neighbor)
+        free_components.append(comp_size)
+    # The spangram must split the grid into exactly two free regions.
+    if len(free_components) != 2:
+        return False
+    # Each region must have at least min_free nodes.
+    if any(comp_size < min_free for comp_size in free_components):
+        return False
+    # Ensure that the free regions can be exactly filled by the remaining strands.
+    if not can_partition_components(free_components, remaining_strands):
+        return False
+    return True
 
 # ---------------------
 # Connectivity and feasibility checks
 # ---------------------
 
 def get_free_components(used, grid, node_to_coord):
-    """
-    Given the set of used nodes, compute the sizes of all connected components
-    in the free (unused) part of the grid. We use 8-direction connectivity.
-    """
     all_nodes = set(node for row in grid for node in row)
     free_nodes = all_nodes - used
     components = []
@@ -170,19 +200,11 @@ def get_free_components(used, grid, node_to_coord):
     return components
 
 def can_partition_components(component_sizes, strands):
-    """
-    Given the list of free component sizes and the list of remaining strand lengths,
-    check whether it is possible to partition the strands so that for each free component,
-    some subset of strands adds up exactly to its size.
-    (This is a necessary condition for a solution.)
-    """
     if not component_sizes:
         return len(strands) == 0
-    # Sort components descending for a bit of efficiency.
     component_sizes = sorted(component_sizes, reverse=True)
     target = component_sizes[0]
     
-    # Generate all subsets of the remaining strands that sum exactly to the target.
     subsets = []
     def find_subsets(i, current, current_sum):
         if current_sum == target:
@@ -190,16 +212,13 @@ def can_partition_components(component_sizes, strands):
             return
         if i >= len(strands) or current_sum > target:
             return
-        # Choose strands[i]
         current.append(i)
         find_subsets(i+1, current, current_sum + strands[i])
         current.pop()
-        # Skip strands[i]
         find_subsets(i+1, current, current_sum)
     find_subsets(0, [], 0)
     if not subsets:
         return False
-    # Try each subset assignment.
     for subset in subsets:
         remaining = [strands[i] for i in range(len(strands)) if i not in subset]
         if can_partition_components(component_sizes[1:], remaining):
@@ -214,9 +233,7 @@ def backtrack_solve(sorted_strands, index, used, diagonals_used, solution, node_
     if index == len(sorted_strands):
         return True
 
-    # --- Connectivity lookahead ---
-    # Determine which free regions remain and whether they can (in principle) house
-    # the unplaced strands.
+    # Connectivity lookahead.
     remaining_strands_lengths = [length for (_, length) in sorted_strands[index:]]
     free_components = get_free_components(used, grid, node_to_coord)
     if free_components and min(free_components) < min(remaining_strands_lengths):
@@ -230,11 +247,19 @@ def backtrack_solve(sorted_strands, index, used, diagonals_used, solution, node_
     for start in remaining_candidates:
         path = dfs_for_strand(name, length, start, used, node_to_coord, grid, prefer_turn=True, diagonals_used=diagonals_used)
         if path is not None:
-            # For the SPANGRAM strand, enforce the extra wall constraint.
-            if name.upper() == "SPANGRAM" and not check_spangram_constraint(path, grid, spangram_direction):
-                for node in path:
-                    used.remove(node)
-                continue
+            # --- If this is the spangram, apply both the original and new rules ---
+            if name.upper() == "SPANGRAM":
+                if not check_spangram_constraint(path, grid, spangram_direction):
+                    for node in path:
+                        used.remove(node)
+                    continue
+                # Compute remaining strands (all except the spangram).
+                remaining_strands = [length for (nm, length) in sorted_strands if nm.upper() != "SPANGRAM"]
+                if not check_spangram_separation_rule(path, grid, node_to_coord, remaining_strands, min_free=10):
+                    for node in path:
+                        used.remove(node)
+                    continue
+
             solution[name] = path
             if backtrack_solve(sorted_strands, index + 1, used, diagonals_used, solution, node_to_coord, grid, all_nodes, spangram_direction):
                 return True
@@ -246,17 +271,21 @@ def backtrack_solve(sorted_strands, index, used, diagonals_used, solution, node_
 
 def solve_partition(strands, grid, spangram_direction):
     """
-    Partition the grid into disjoint paths for each strand using a single-threaded backtracking
-    approach with connectivity (feasibility) pruning. Returns a dictionary mapping strand names
-    to paths if a solution is found, or None otherwise.
+    Partition the grid into disjoint paths for each strand. The strands are reordered so that
+    the spangram is placed first.
     """
     node_to_coord = {}
     for i, row in enumerate(grid):
         for j, node in enumerate(row):
             node_to_coord[node] = (i, j)
     all_nodes = set(node for row in grid for node in row)
-    # Sort strands by descending length (the longer, more-constrained strands first).
-    sorted_strands = sorted(strands, key=lambda x: x[1], reverse=True)
+    # --- Reorder strands so that SPANGRAM is always first ---
+    spangram_strands = [s for s in strands if s[0].upper() == "SPANGRAM"]
+    other_strands = [s for s in strands if s[0].upper() != "SPANGRAM"]
+    # You can still sort the remaining strands by descending length.
+    other_strands = sorted(other_strands, key=lambda x: x[1], reverse=True)
+    sorted_strands = spangram_strands + other_strands
+
     used = set()
     diagonals_used = {}
     solution = {}
@@ -270,7 +299,6 @@ def solve_partition(strands, grid, spangram_direction):
 # ---------------------
 
 if __name__ == "__main__":
-    # Define grid (8 rows x 6 columns)
     grid = [
         [1, 2, 3, 4, 5, 6],
         [7, 8, 9, 10, 11, 12],
@@ -293,7 +321,7 @@ if __name__ == "__main__":
     ]
     spangram = "CHICKENSOUP"  # Special strand with extra wall constraint
 
-    # Build strands list as [name, length]
+    # Build strands list as [name, length].
     strands = [[word, len(word)] for word in words]
     strands.append(["SPANGRAM", len(spangram)])
     
@@ -316,7 +344,6 @@ if __name__ == "__main__":
         G = nx.DiGraph()
         G.add_nodes_from(positions.keys())
 
-        # Define colors for each strand.
         strand_colors = {
             'CARROTS': 'red',
             'CELERY': 'blue',
