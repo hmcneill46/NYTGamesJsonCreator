@@ -78,14 +78,14 @@ def calculateSetOfWords(board: list, wordTrie):
 
 
 if __name__ == "__main__":
-    startingBoard = [list("ADEEQS"),
-                    list("ELPBTU"),
-                    list("DITRUA"),
-                    list("EFICRE"),
-                    list("CSGEEX"),
-                    list("RNULPU"),
-                    list("UHKPST"),
-                    list("NCNALI")]
+    startingBoard = [list("NGESTI"),
+                    list("ODLOCO"),
+                    list("CIRGKN"),
+                    list("TFFJAM"),
+                    list("RAICGE"),
+                    list("OVEGBA"),
+                    list("RCRNLK"),
+                    list("OWDIOC")]
 
     themeWords = ["BURPEE","CRUNCH","DEADLIFT","LUNGE","PLANK","SITUP","SQUAT"]
 
@@ -109,5 +109,8 @@ if __name__ == "__main__":
         for col in range(len(startingBoard[0])):
             print(startingBoard[row][col], end=" ")
         print()
+    print(sorted(list(calculateSetOfWords(startingBoard, wordTrie)),key=len))
+    for word in sorted(list(calculateSetOfWords(startingBoard, wordTrie)),key=len):
+        print(word)
 
     print(validatePuzzle(startingBoard, wordTrie, importantWords))
