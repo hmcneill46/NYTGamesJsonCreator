@@ -2,6 +2,7 @@ import random
 import matplotlib.pyplot as plt
 import networkx as nx
 import matplotlib.patches as mpatches
+from tqdm import tqdm
 
 class StrandsSolverV2:
     def __init__(self, themeWords, spangram, grid_dimensions, spangram_direction):
@@ -44,20 +45,20 @@ class StrandsSolverV2:
         self.spangramPath = []
 
         # TESTING STUFF CAN DELETE LATER
-        # oldGrid = self.grid.copy()
+        oldGrid = self.grid.copy()
 
-        self.spangramPath = self.calculate_spangram_path(self.spangramLength, self.grid, self.startingNode, self.calculate_new_permitted_directions())
+        self.spangramPath = self.calculate_spangram_path(self.spangramLength, self.grid, self.startingNode, self.calculate_new_permitted_directions(self.spangramSlack), self.spangramSlack)
   
-        # self.grid = oldGrid.copy()
+        #self.grid = oldGrid.copy()
         
-        # self.test_spanagram_failure_rate()
+        #self.test_spanagram_failure_rate(1000000)
         ################################
 
 
               
         
     
-    def test_spanagram_failure_rate(self):
+    def test_spanagram_failure_rate(self, iterations):
         oldGrid = self.grid.copy()
         total_attempts = 0
         correct_attempts = 0
@@ -65,7 +66,7 @@ class StrandsSolverV2:
         if self.spangramPath is not None:
             correct_attempts += 1
         
-        for n in range(1000000):
+        for n in tqdm(range(iterations)):
             total_attempts += 1
             self.grid = oldGrid.copy()
             self.spangramSlack = self.get_initial_spangram_slack()
@@ -73,7 +74,7 @@ class StrandsSolverV2:
             self.spangramSlack = self.update_spangram_slack()
             self.spangramPath = []
             
-            self.spangramPath = self.calculate_spangram_path(self.spangramLength, self.grid, self.startingNode, self.calculate_new_permitted_directions())
+            self.spangramPath = self.calculate_spangram_path(self.spangramLength, self.grid, self.startingNode, self.calculate_new_permitted_directions(self.spangramSlack), self.spangramSlack)
 
             if self.spangramPath is not None:
                 correct_attempts += 1
@@ -82,60 +83,97 @@ class StrandsSolverV2:
         print(f"Success rate: {correct_attempts/total_attempts}")
         
 
-    def calculate_spangram_path(self, remainingLength, currentGrid, currentPosition, permittedDirections):
-        
+    def calculate_spangram_path(self, remainingLength, currentGrid, currentPosition, permittedDirections, spangramSlack, workingSpangram=[], disallowedEdges:list=[], reverseSlack=0):
         if remainingLength == 0:
-            return []
+            self.grid = currentGrid.copy()
+            return workingSpangram
         if remainingLength == 1:
             currentGrid[currentPosition] = self.spangram[self.spangramLength - 1]
-            return [currentPosition]
+            self.grid = currentGrid.copy()
+            return workingSpangram + [currentPosition]
+        if spangram_direction == "horizontal" and reverseSlack != float("inf"):
+            startingWall = 0 if self.spangramDirection[1] == 1 else self.grid_dimensions[1] - 1
+            distanceFromWall = abs(currentPosition[1] - startingWall)
+            totalDistanceToGo = distanceFromWall + self.grid_dimensions[1] - 1
+            if distanceFromWall == 0:
+                reverseSlack = float("inf")
+            if remainingLength == totalDistanceToGo:
+                reverseSlack = 0
+        if spangram_direction == "vertical" and reverseSlack != float("inf"):
+            startingWall = 0 if self.spangramDirection[0] == 1 else self.grid_dimensions[0] - 1
+            distanceFromWall = abs(currentPosition[0] - startingWall)
+            totalDistanceToGo = distanceFromWall + self.grid_dimensions[0] - 1
+            if distanceFromWall == 0:
+                reverseSlack = float("inf")
+            if remainingLength == totalDistanceToGo:
+                reverseSlack = 0
+
         legalDirections = []
         for direction in permittedDirections:
             newPosition = (currentPosition[0] + direction[0], currentPosition[1] + direction[1])
-            if newPosition in currentGrid.keys() and currentGrid[newPosition] is None:
-                legalDirections.append(direction)
+            if newPosition not in currentGrid.keys() or currentGrid[newPosition] != None:
+                continue
+            if [currentPosition,newPosition] in disallowedEdges:
+                continue
+            if reverseSlack == 0:
+                if spangram_direction == "horizontal":
+                    if direction[1] == self.spangramDirection[1]:
+                        continue
+                if spangram_direction == "vertical":
+                    if direction[0] == self.spangramDirection[0]:
+                        continue
+            legalDirections.append(direction)
+        
         #self.visualise_grid()
-
-        if len(legalDirections) == 0:
-            return None
-            #self.visualise_grid()
-        chosenDirection  = random.choice(legalDirections)
-        newPosition = (currentPosition[0] + chosenDirection[0], currentPosition[1] + chosenDirection[1])
-        if self.spangramDirection[0] == 0: # horizontal
-            if chosenDirection[1] == -1*self.spangramDirection[1]:
-                self.spangramSlack -= 2
-                newPermittedDirections = self.calculate_new_permitted_directions()
-            elif chosenDirection[1] != self.spangramDirection[1]:
-                self.spangramSlack -= 1
-                newPermittedDirections = self.calculate_new_permitted_directions()
-            else:
-                newPermittedDirections = permittedDirections
-        if self.spangramDirection[1] == 0: # vertical
-            if chosenDirection[0] == -1*self.spangramDirection[0]:
-                self.spangramSlack -= 2
-                newPermittedDirections = self.calculate_new_permitted_directions()
-            elif chosenDirection[0] != self.spangramDirection[0]:
-                self.spangramSlack -= 1
-                newPermittedDirections = self.calculate_new_permitted_directions()
-            else:
-                newPermittedDirections = permittedDirections
-        currentGrid[currentPosition] = self.spangram[self.spangramLength - remainingLength]
-        result = self.calculate_spangram_path(remainingLength - 1, currentGrid, newPosition, newPermittedDirections)
-        if result is None:
-            currentGrid[currentPosition] = None
-            return None
-        return [currentPosition] + result
+        result = None
+        backupSpangramSlack = spangramSlack
+        newDissallowedEdges = disallowedEdges.copy()
+        while result is None:
+            spangramSlack = backupSpangramSlack
+            if len(legalDirections) == 0:
+                return None
+                #self.visualise_grid()
+            chosenDirection  = random.choice(legalDirections)
+            newPosition = (currentPosition[0] + chosenDirection[0], currentPosition[1] + chosenDirection[1])
+            if chosenDirection[0] != 0 and chosenDirection[1] != 0: # diagonal rule
+                newDissallowedEdges.append([(currentPosition[0]+chosenDirection[0], currentPosition[1]),
+                                            (currentPosition[0], currentPosition[1]+chosenDirection[1])])
+                newDissallowedEdges.append([(currentPosition[0], currentPosition[1]+chosenDirection[1]),
+                                            (currentPosition[0]+chosenDirection[0], currentPosition[1])])
+            if self.spangramDirection[0] == 0: # horizontal
+                if chosenDirection[1] == -1*self.spangramDirection[1]:
+                    spangramSlack -= 2
+                    newPermittedDirections = self.calculate_new_permitted_directions(spangramSlack)
+                elif chosenDirection[1] != self.spangramDirection[1]:
+                    spangramSlack -= 1
+                    newPermittedDirections = self.calculate_new_permitted_directions(spangramSlack)
+                else:
+                    newPermittedDirections = permittedDirections
+            if self.spangramDirection[1] == 0: # vertical
+                if chosenDirection[0] == -1*self.spangramDirection[0]:
+                    spangramSlack -= 2
+                    newPermittedDirections = self.calculate_new_permitted_directions(spangramSlack)
+                elif chosenDirection[0] != self.spangramDirection[0]:
+                    spangramSlack -= 1
+                    newPermittedDirections = self.calculate_new_permitted_directions(spangramSlack)
+                else:
+                    newPermittedDirections = permittedDirections
+            currentGrid[currentPosition] = self.spangram[self.spangramLength - remainingLength]
+            result = self.calculate_spangram_path(remainingLength - 1, dict(currentGrid), newPosition, list(newPermittedDirections), spangramSlack, list(workingSpangram + [currentPosition]), newDissallowedEdges, reverseSlack=reverseSlack)
+            if result is None:
+                legalDirections.remove(chosenDirection)
+        return result
         
     
-    def calculate_new_permitted_directions(self):
-        if self.spangramSlack < 0:
+    def calculate_new_permitted_directions(self, spangramSlack):
+        if spangramSlack < 0:
             raise ValueError("The spangram slack is negative.")
-        elif self.spangramSlack == 0:
+        elif spangramSlack == 0:
             if spangram_direction == "horizontal":
                 return [direction for direction in self.permittedDirections if direction[1] == self.spangramDirection[1]]
             else:
                 return[direction for direction in self.permittedDirections if direction[0] == self.spangramDirection[0]]
-        elif self.spangramSlack == 1:
+        elif spangramSlack == 1:
             if spangram_direction == "horizontal":
                 return[direction for direction in self.permittedDirections if direction[1] != -1*self.spangramDirection[1]]
             else:
@@ -260,8 +298,9 @@ class StrandsSolverV2:
 # Example Usage:
 if __name__ == "__main__":
     themeWords = ["scaret","grape","stain","slate","plant","tee","", ""]
-    spangram = "accommodativenesses"
+    spangram = "abcdefghijklmnopr"
     grid_dimensions = (8, 6) # 8 rows, 6 columns
+    themeWords = [((grid_dimensions[0]*grid_dimensions[1])-len(spangram))*" "] # just for testing spangram
     spangram_direction = "vertical"
     solver = StrandsSolverV2(themeWords, spangram, grid_dimensions, spangram_direction)
     strand_path = solver.find_valid_strand_path()
