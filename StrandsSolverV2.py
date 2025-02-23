@@ -39,20 +39,47 @@ class StrandsSolverV2:
 
         self.startingNode = random.choice(self.possibleStrandStartNodes)
         
-        self.spangramSlack = self.update_spangram_slack()   
-        print(f"Initial slack: {self.spangramSlack}")     
+        self.spangramSlack = self.update_spangram_slack()  
 
         self.spangramPath = []
-        oldGrid = self.grid.copy()
+
+        # TESTING STUFF CAN DELETE LATER
+        # oldGrid = self.grid.copy()
+
         self.spangramPath = self.calculate_spangram_path(self.spangramLength, self.grid, self.startingNode, self.calculate_new_permitted_directions())
+  
+        # self.grid = oldGrid.copy()
         
-        for n in range(100):
+        # self.test_spanagram_failure_rate()
+        ################################
+
+
+              
+        
+    
+    def test_spanagram_failure_rate(self):
+        oldGrid = self.grid.copy()
+        total_attempts = 0
+        correct_attempts = 0
+        total_attempts += 1
+        if self.spangramPath is not None:
+            correct_attempts += 1
+        
+        for n in range(1000000):
+            total_attempts += 1
             self.grid = oldGrid.copy()
+            self.spangramSlack = self.get_initial_spangram_slack()
             self.startingNode = random.choice(self.possibleStrandStartNodes)
             self.spangramSlack = self.update_spangram_slack()
             self.spangramPath = []
             
             self.spangramPath = self.calculate_spangram_path(self.spangramLength, self.grid, self.startingNode, self.calculate_new_permitted_directions())
+
+            if self.spangramPath is not None:
+                correct_attempts += 1
+        print(f"Total attempts: {total_attempts}")
+        print(f"Correct attempts: {correct_attempts}")
+        print(f"Success rate: {correct_attempts/total_attempts}")
         
 
     def calculate_spangram_path(self, remainingLength, currentGrid, currentPosition, permittedDirections):
@@ -67,14 +94,11 @@ class StrandsSolverV2:
             newPosition = (currentPosition[0] + direction[0], currentPosition[1] + direction[1])
             if newPosition in currentGrid.keys() and currentGrid[newPosition] is None:
                 legalDirections.append(direction)
-        
-        self.spangramPath.append(currentPosition)
-        print(f"legal directions: {legalDirections}")
-        print(f"current slack: {self.spangramSlack}")
         #self.visualise_grid()
 
         if len(legalDirections) == 0:
-            self.visualise_grid()
+            return None
+            #self.visualise_grid()
         chosenDirection  = random.choice(legalDirections)
         newPosition = (currentPosition[0] + chosenDirection[0], currentPosition[1] + chosenDirection[1])
         if self.spangramDirection[0] == 0: # horizontal
@@ -96,7 +120,11 @@ class StrandsSolverV2:
             else:
                 newPermittedDirections = permittedDirections
         currentGrid[currentPosition] = self.spangram[self.spangramLength - remainingLength]
-        return [currentPosition] + self.calculate_spangram_path(remainingLength - 1, currentGrid, newPosition, newPermittedDirections)
+        result = self.calculate_spangram_path(remainingLength - 1, currentGrid, newPosition, newPermittedDirections)
+        if result is None:
+            currentGrid[currentPosition] = None
+            return None
+        return [currentPosition] + result
         
     
     def calculate_new_permitted_directions(self):
@@ -231,10 +259,10 @@ class StrandsSolverV2:
         plt.show()
 # Example Usage:
 if __name__ == "__main__":
-    themeWords = ["scaret","grape","stain","slate","plant","bright","four", "prt"]
-    spangram = "purpleepe"
+    themeWords = ["scaret","grape","stain","slate","plant","tee","", ""]
+    spangram = "accommodativenesses"
     grid_dimensions = (8, 6) # 8 rows, 6 columns
-    spangram_direction = "horizontal"
+    spangram_direction = "vertical"
     solver = StrandsSolverV2(themeWords, spangram, grid_dimensions, spangram_direction)
     strand_path = solver.find_valid_strand_path()
     solver.visualise_grid()
