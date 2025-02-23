@@ -126,8 +126,8 @@ category_title_entries = []
 card_entries = []  # List of lists; one list per category
 
 # Create 4 sections for the categories.
-for i in range(4):
-    frame = ttk.Labelframe(scrollable_frame, text=f"Category {i+1}", padding=10)
+for i, difficulty in enumerate(["Easy", "Medium", "Hard", "Very Hard"]):
+    frame = ttk.Labelframe(scrollable_frame, text=f"Difficulty {difficulty}", padding=10)
     frame.grid(row=2+i, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
     
     # Category title input
