@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import matplotlib.patches as mpatches
 from tqdm import tqdm
+from itertools import permutations
 
 class StrandsSolverV2:
     def __init__(self, themeWords, spangram, grid_dimensions, spangram_direction):
@@ -34,6 +35,23 @@ class StrandsSolverV2:
         self.permittedDirections = [[-1, -1], [-1, 0], [-1, 1],
                                     [0, -1],           [0, 1],
                                     [1, -1],  [1, 0],  [1, 1]]
+
+        allValidGridSizePairs = self.find_valid_grid_size_pairs(self.themeWords)
+        self.allUniqueGridSizePairs = []
+        seen_pairs = set()
+        for pair in allValidGridSizePairs:
+            sorted_pair = (pair[0], tuple(sorted(pair[1], key=lambda x: -len(x))))
+            if sorted_pair not in seen_pairs:
+                seen_pairs.add(sorted_pair)
+                self.allUniqueGridSizePairs.append([pair[0], list(sorted_pair[1])])
+        self.allUniqueGridSizePairs.sort(key=lambda x: x[0])
+
+
+        print("All Unique Grid Size pairs: ")
+        for pair in self.allUniqueGridSizePairs:
+            print(pair)
+        self.allValidGridSizes = sorted(list(set([pair[0] for pair in self.allUniqueGridSizePairs])))
+        print("All Valid Grid Sizes: ", self.allValidGridSizes)
         
         
         calculatedStrandsGraph = self.calculate_strands_graph(self.spangramSlack, self.spangramDirection, self.grid_dimensions)
@@ -65,7 +83,7 @@ class StrandsSolverV2:
             for x in range(grid_dimensions[1]):
                 print((y,x) if (y,x) in seperateGrids[0] else "xxxxxx", end=" ")
             print()
-
+        
         strandPaths[self.themeWords[0]] = self.calculate_strand_path(self.strandLengths[0], seperateGrids[0], random.choice(list(seperateGrids[0].keys())), self.themeWords[0], self.get_illegal_edges(spangramPath))
 
         for themeWord in self.themeWords:
@@ -80,7 +98,6 @@ class StrandsSolverV2:
         return grid, strandPaths, spangramPath
     
     def calculate_strand_path(self, remainingLength, currentGrid, currentPosition, word, disallowedEdges:list, workingStrand=[]):
-        print("Disallowed Edges: ", disallowedEdges)
         if remainingLength == 0:
             return workingStrand
         if remainingLength == 1:
@@ -117,16 +134,15 @@ class StrandsSolverV2:
                 legalDirections.remove(chosenDirection)
         return result
     
-    def find_valid_grid_sizes(self, themeWords, ):
-        letterCount = len(spangram)
-        for word in themeWords:
-            letterCount += len(word)
-        validGridSizes = []
-        for rows in range(1, letterCount + 1):
-            for cols in range(1, letterCount + 1):
-                if rows * cols == letterCount:
-                    validGridSizes.append((rows, cols))
-        return validGridSizes
+    def find_valid_grid_size_pairs(self, themeWords):
+
+        allSizes = []
+        for perm in permutations(themeWords):
+            combined_length = 0
+            for i in range(len(perm)):
+                combined_length += len(perm[i])
+                allSizes.append([combined_length, set(perm[:i+1])])
+        return allSizes
 
     def Calculate_seperate_grids(self, grid, allEdges, grid_dimensions):
         free_spaces = [position for position in grid.keys() if grid[position] is None]
