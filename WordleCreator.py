@@ -44,7 +44,7 @@ def create_json():
         messagebox.showerror("Error", "Selected date is not in the expected format (YYYY-MM-DD).")
         return
 
-    solution_word = word_entry.get()
+    solution_word = word_entry.get().upper()
     editor_name = editor_entry.get()
     file_path = getattr(root, "selected_file_path", None)
     
